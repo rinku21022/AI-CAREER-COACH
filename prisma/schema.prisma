@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  clerkUserId   String    @unique // clerk user id
+  email         String    @unique
+  name          String?
+  imageUrl      String?
+  industry      String?    // Combined industry-subindustry (e.g., "tech-software-development")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Profile fields
+  bio           String?
+  experience    Int?      // Years of experience
+  
+  // Relations
+  skillsString  String?   // Comma-separated skills
+  assessments   Assessment[]
+  resume        Resume?
+  coverLetter   CoverLetter[]
+}
+
+model Assessment {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  quizScore     Float     // Overall quiz score
+  questionsJson String    // JSON string of questions array
+  category      String    // "Technical", "Behavioral", etc.
+  improvementTip String?  // AI-generated improvement tip
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Resume {
+  id          String    @id @default(cuid())
+  userId      String    @unique    // One resume per user
+  user        User      @relation(fields: [userId], references: [id])
+  content     String    // Markdown content
+  atsScore    Float?
+  feedback    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model CoverLetter {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  content         String    // Markdown content
+  jobDescription  String?
+  companyName     String    // Name of the company applying to
+  jobTitle        String    // Position applying for
+  status          String    @default("draft") // draft, completed
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// Combined Industry Trends and Salary Insights
+model IndustryInsight {
+  id            String    @id @default(cuid())
+  industry      String    // The industry this data belongs to (e.g., "tech-software-development")
+  
+  // Salary data
+  salaryRangesJson  String    // JSON string of salary ranges
+  
+  // Industry trends
+  growthRate    Float     // Industry growth rate
+  demandLevel   String    // "High", "Medium", "Low"
+  topSkillsString String   // Comma-separated skills
+  
+  // Market conditions
+  marketOutlook String    // "Positive", "Neutral", "Negative"
+  keyTrendsString String   // Comma-separated trends
+  
+  // Learning suggestions
+  recommendedSkillsString String   // Comma-separated skills
+  
+  lastUpdated   DateTime  @default(now())
+  nextUpdate    DateTime  // Scheduled update time
+}
