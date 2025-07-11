@@ -1,60 +1,79 @@
 "use server";
 
-import { db } from "@/lib/prisma";
-import { auth } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { db } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 export async function saveResume(content) {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
+  const user = await currentUser();
 
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+
+  // Ensure user exists (using correct schema)
+  let dbUser = await db.user.findUnique({
+    where: { clerkUserId: user.id },
   });
 
-  if (!user) throw new Error("User not found");
-
-  try {
-    const resume = await db.resume.upsert({
-      where: {
-        userId: user.id,
-      },
-      update: {
-        content,
-      },
-      create: {
-        userId: user.id,
-        content,
+  if (!dbUser) {
+    dbUser = await db.user.create({
+      data: {
+        clerkUserId: user.id,
+        email: user.emailAddresses[0].emailAddress,
+        firstName: user.firstName || "", // ✅ Use firstName
+        lastName: user.lastName || "", // ✅ Use lastName
+        imageUrl: user.imageUrl || "", // ✅ Add imageUrl
       },
     });
-
-    revalidatePath("/resume");
-    return resume;
-  } catch (error) {
-    console.error("Error saving resume:", error);
-    throw new Error("Failed to save resume");
   }
+
+  // Save or update resume
+  const resume = await db.resume.upsert({
+    where: { userId: dbUser.id },
+    update: { content },
+    create: {
+      userId: dbUser.id,
+      content,
+    },
+  });
+
+  revalidatePath("/resume");
+  return resume;
 }
 
 export async function getResume() {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
+  const user = await currentUser();
 
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
 
-  if (!user) throw new Error("User not found");
-
-  return await db.resume.findUnique({
-    where: {
-      userId: user.id,
+  // Ensure user exists
+  let dbUser = await db.user.findUnique({
+    where: { clerkUserId: user.id },
+    include: {
+      resumes: true,
     },
   });
+
+  if (!dbUser) {
+    dbUser = await db.user.create({
+      data: {
+        clerkUserId: user.id,
+        email: user.emailAddresses[0].emailAddress,
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        imageUrl: user.imageUrl || "",
+      },
+    });
+  }
+
+  return dbUser.resumes?.[0] || null;
 }
 
 export async function improveWithAI({ current, type }) {
