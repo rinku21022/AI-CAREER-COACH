@@ -4,58 +4,51 @@ import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 export async function generateQuiz() {
-  try {
-    const { userId } = await auth();
-    if (!userId) {
-      return [
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const user = await db.user.findUnique({
+    where: { clerkUserId: userId },
+    select: {
+      industry: true,
+      skillsString: true,
+    },
+  });
+
+  if (!user) throw new Error("User not found");
+
+  const prompt = `
+    Generate 10 technical interview questions for a ${user.industry} professional${
+    user.skillsString ? ` with expertise in ${user.skillsString}` : ""
+  }.
+    
+    Each question should be multiple choice with 4 options.
+    
+    Return the response in this JSON format only, no additional text:
+    {
+      "questions": [
         {
-          question: "What does HTML stand for?",
-          options: [
-            "Hyper Text Markup Language",
-            "High Tech Modern Language",
-            "Home Tool Markup Language",
-            "Hyperlink and Text Markup Language",
-          ],
-          correctAnswer: "Hyper Text Markup Language",
-          explanation: "HTML stands for Hyper Text Markup Language.",
-        },
-      ];
+          "question": "string",
+          "options": ["string", "string", "string", "string"],
+          "correctAnswer": "string",
+          "explanation": "string"
+        }
+      ]
     }
+  `;
 
-    const user = await db.user.findUnique({
-      where: { clerkUserId: userId },
-      select: { industry: true, skillsString: true },
-    });
-
-    const skills = user?.skillsString ? user.skillsString.split(",") : [];
-    const industry = user?.industry || "Technology";
-
-    const prompt = `Generate 3 technical questions for ${industry} professional. Return JSON: {"questions": [{"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": "A", "explanation": "..."}]}`;
-
+  try {
     const result = await model.generateContent(prompt);
-    const text = result.response.text().replace(/```(?:json)?\n?/g, "").trim();
-
-    const quizData = JSON.parse(text);
-    return quizData.questions || [];
+    const text = result.response.text();
+    const parsed = JSON.parse(text);
+    return parsed.questions;
   } catch (error) {
-    console.error("Error:", error);
-    return [
-      {
-        question: "What does HTML stand for?",
-        options: [
-          "Hyper Text Markup Language",
-          "High Tech Modern Language",
-          "Home Tool Markup Language",
-          "Hyperlink and Text Markup Language",
-        ],
-        correctAnswer: "Hyper Text Markup Language",
-        explanation: "HTML stands for Hyper Text Markup Language.",
-      },
-    ];
+    console.error("Error generating quiz:", error);
+    throw new Error("Failed to generate quiz");
   }
 }
 
@@ -103,7 +96,6 @@ export async function saveQuizResult(questions, answers, score) {
 
     try {
       const tipResult = await model.generateContent(improvementPrompt);
-
       improvementTip = tipResult.response.text().trim();
       console.log(improvementTip);
     } catch (error) {
@@ -116,10 +108,13 @@ export async function saveQuizResult(questions, answers, score) {
     const assessment = await db.assessment.create({
       data: {
         userId: user.id,
-        quizScore: score,
-        questionsJson: JSON.stringify(questionResults),
+        score: score,                        // ✅ Using schema field
+        totalQuestions: questions.length,    // ✅ Using schema field
+        correctAnswers: score,               // ✅ Using schema field
+        results: questionResults,            // ✅ Using schema field
         category: "Technical",
         improvementTip,
+        type: "QUIZ",                        // ✅ Added required field
       },
     });
 
@@ -146,14 +141,15 @@ export async function getAssessments() {
         userId: user.id,
       },
       orderBy: {
-        createdAt: "asc",
+        createdAt: "desc",
       },
     });
 
-    // Parse the JSON strings into objects
+    // Map schema fields to component expectations
     return assessments.map((assessment) => ({
       ...assessment,
-      questions: JSON.parse(assessment.questionsJson || "[]"),
+      quizScore: assessment.score,           // ✅ Backward compatibility
+      questions: assessment.results || [],  // ✅ Backward compatibility
     }));
   } catch (error) {
     console.error("Error fetching assessments:", error);
