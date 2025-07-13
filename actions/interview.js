@@ -22,32 +22,45 @@ export async function generateQuiz() {
   if (!user) throw new Error("User not found");
 
   const prompt = `
-    Generate 10 technical interview questions for a ${user.industry} professional${
+Generate 10 technical interview questions for a ${user.industry} professional${
     user.skillsString ? ` with expertise in ${user.skillsString}` : ""
   }.
-    
-    Each question should be multiple choice with 4 options.
-    
-    Return the response in this JSON format only, no additional text:
+
+Each question should be multiple choice with 4 options.
+
+Return ONLY valid JSON in the following format — no markdown, no extra explanation:
+
+{
+  "questions": [
     {
-      "questions": [
-        {
-          "question": "string",
-          "options": ["string", "string", "string", "string"],
-          "correctAnswer": "string",
-          "explanation": "string"
-        }
-      ]
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correctAnswer": "string",
+      "explanation": "string"
     }
+  ]
+}
   `;
 
   try {
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const parsed = JSON.parse(text);
+    const rawText = await result.response.text();
+
+    // Remove ```json ... ``` markdown blocks if they exist
+    const cleaned = rawText
+      .replace(/^```json/gm, "")
+      .replace(/^```/gm, "")
+      .trim();
+
+    const parsed = JSON.parse(cleaned);
+
+    if (!parsed.questions || !Array.isArray(parsed.questions)) {
+      throw new Error("Invalid response format from LLM.");
+    }
+
     return parsed.questions;
   } catch (error) {
-    console.error("Error generating quiz:", error);
+    console.error("❌ Error generating quiz:", error);
     throw new Error("Failed to generate quiz");
   }
 }
@@ -70,10 +83,8 @@ export async function saveQuizResult(questions, answers, score) {
     explanation: q.explanation,
   }));
 
-  // Get wrong answers
   const wrongAnswers = questionResults.filter((q) => !q.isCorrect);
 
-  // Only generate improvement tips if there are wrong answers
   let improvementTip = null;
   if (wrongAnswers.length > 0) {
     const wrongQuestionsText = wrongAnswers
@@ -84,23 +95,20 @@ export async function saveQuizResult(questions, answers, score) {
       .join("\n\n");
 
     const improvementPrompt = `
-      The user got the following ${user.industry} technical interview questions wrong:
+The user got the following ${user.industry} technical interview questions wrong:
 
-      ${wrongQuestionsText}
+${wrongQuestionsText}
 
-      Based on these mistakes, provide a concise, specific improvement tip.
-      Focus on the knowledge gaps revealed by these wrong answers.
-      Keep the response under 2 sentences and make it encouraging.
-      Don't explicitly mention the mistakes, instead focus on what to learn/practice.
+Based on these mistakes, provide a short, specific improvement tip.
+Don't mention the mistakes. Focus on the topic or skill to improve.
+Keep it under 2 sentences and be encouraging.
     `;
 
     try {
       const tipResult = await model.generateContent(improvementPrompt);
       improvementTip = tipResult.response.text().trim();
-      console.log(improvementTip);
     } catch (error) {
-      console.error("Error generating improvement tip:", error);
-      // Continue without improvement tip if generation fails
+      console.error("⚠️ Failed to generate improvement tip:", error);
     }
   }
 
@@ -108,19 +116,19 @@ export async function saveQuizResult(questions, answers, score) {
     const assessment = await db.assessment.create({
       data: {
         userId: user.id,
-        score: score,                        // ✅ Using schema field
-        totalQuestions: questions.length,    // ✅ Using schema field
-        correctAnswers: score,               // ✅ Using schema field
-        results: questionResults,            // ✅ Using schema field
+        score: score,
+        totalQuestions: questions.length,
+        correctAnswers: score,
+        results: questionResults,
         category: "Technical",
         improvementTip,
-        type: "QUIZ",                        // ✅ Added required field
+        type: "QUIZ",
       },
     });
 
     return assessment;
   } catch (error) {
-    console.error("Error saving quiz result:", error);
+    console.error("❌ Error saving quiz result:", error);
     throw new Error("Failed to save quiz result");
   }
 }
@@ -145,14 +153,13 @@ export async function getAssessments() {
       },
     });
 
-    // Map schema fields to component expectations
     return assessments.map((assessment) => ({
       ...assessment,
-      quizScore: assessment.score,           // ✅ Backward compatibility
-      questions: assessment.results || [],  // ✅ Backward compatibility
+      quizScore: assessment.score ?? 0,
+      questions: assessment.results || [],
     }));
   } catch (error) {
-    console.error("Error fetching assessments:", error);
+    console.error("❌ Error fetching assessments:", error);
     throw new Error("Failed to fetch assessments");
   }
 }
