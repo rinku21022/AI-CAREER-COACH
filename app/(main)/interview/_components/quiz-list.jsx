@@ -18,30 +18,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import QuizResult from "./quiz-result";
-import Link from "next/link";
 
 export default function QuizList({ assessments }) {
   const router = useRouter();
   const [selectedQuiz, setSelectedQuiz] = useState(null);
-
-  // Ensure assessments is an array
-  const safeAssessments = Array.isArray(assessments) ? assessments : [];
-
-  if (!safeAssessments.length) {
-    return (
-      <div className="border rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium">Recent Assessments</h3>
-          <Link href="/interview/mock">
-            <Button>Take Quiz</Button>
-          </Link>
-        </div>
-        <div className="text-center text-muted-foreground py-8">
-          No assessments yet. Take your first quiz to get started!
-        </div>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -63,7 +43,7 @@ export default function QuizList({ assessments }) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {safeAssessments.slice(0, 5).map((assessment, i) => (
+            {assessments?.map((assessment, i) => (
               <Card
                 key={assessment.id}
                 className="cursor-pointer hover:bg-muted/50 transition-colors"

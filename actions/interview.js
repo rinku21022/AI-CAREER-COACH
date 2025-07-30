@@ -5,7 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 export async function generateQuiz() {
   const { userId } = await auth();
@@ -15,53 +15,45 @@ export async function generateQuiz() {
     where: { clerkUserId: userId },
     select: {
       industry: true,
-      skillsString: true,
+      skills: true,
     },
   });
 
   if (!user) throw new Error("User not found");
 
   const prompt = `
-Generate 10 technical interview questions for a ${user.industry} professional${
-    user.skillsString ? ` with expertise in ${user.skillsString}` : ""
+    Generate 10 technical interview questions for a ${
+      user.industry
+    } professional${
+    user.skills?.length ? ` with expertise in ${user.skills.join(", ")}` : ""
   }.
-
-Each question should be multiple choice with 4 options.
-
-Return ONLY valid JSON in the following format — no markdown, no extra explanation:
-
-{
-  "questions": [
+    
+    Each question should be multiple choice with 4 options.
+    
+    Return the response in this JSON format only, no additional text:
     {
-      "question": "string",
-      "options": ["string", "string", "string", "string"],
-      "correctAnswer": "string",
-      "explanation": "string"
+      "questions": [
+        {
+          "question": "string",
+          "options": ["string", "string", "string", "string"],
+          "correctAnswer": "string",
+          "explanation": "string"
+        }
+      ]
     }
-  ]
-}
   `;
 
   try {
     const result = await model.generateContent(prompt);
-    const rawText = await result.response.text();
+    const response = result.response;
+    const text = response.text();
+    const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
+    const quiz = JSON.parse(cleanedText);
 
-    // Remove ```json ... ``` markdown blocks if they exist
-    const cleaned = rawText
-      .replace(/^```json/gm, "")
-      .replace(/^```/gm, "")
-      .trim();
-
-    const parsed = JSON.parse(cleaned);
-
-    if (!parsed.questions || !Array.isArray(parsed.questions)) {
-      throw new Error("Invalid response format from LLM.");
-    }
-
-    return parsed.questions;
+    return quiz.questions;
   } catch (error) {
-    console.error("❌ Error generating quiz:", error);
-    throw new Error("Failed to generate quiz");
+    console.error("Error generating quiz:", error);
+    throw new Error("Failed to generate quiz questions");
   }
 }
 
@@ -83,8 +75,10 @@ export async function saveQuizResult(questions, answers, score) {
     explanation: q.explanation,
   }));
 
+  // Get wrong answers
   const wrongAnswers = questionResults.filter((q) => !q.isCorrect);
 
+  // Only generate improvement tips if there are wrong answers
   let improvementTip = null;
   if (wrongAnswers.length > 0) {
     const wrongQuestionsText = wrongAnswers
@@ -95,20 +89,24 @@ export async function saveQuizResult(questions, answers, score) {
       .join("\n\n");
 
     const improvementPrompt = `
-The user got the following ${user.industry} technical interview questions wrong:
+      The user got the following ${user.industry} technical interview questions wrong:
 
-${wrongQuestionsText}
+      ${wrongQuestionsText}
 
-Based on these mistakes, provide a short, specific improvement tip.
-Don't mention the mistakes. Focus on the topic or skill to improve.
-Keep it under 2 sentences and be encouraging.
+      Based on these mistakes, provide a concise, specific improvement tip.
+      Focus on the knowledge gaps revealed by these wrong answers.
+      Keep the response under 2 sentences and make it encouraging.
+      Don't explicitly mention the mistakes, instead focus on what to learn/practice.
     `;
 
     try {
       const tipResult = await model.generateContent(improvementPrompt);
+
       improvementTip = tipResult.response.text().trim();
+      console.log(improvementTip);
     } catch (error) {
-      console.error("⚠️ Failed to generate improvement tip:", error);
+      console.error("Error generating improvement tip:", error);
+      // Continue without improvement tip if generation fails
     }
   }
 
@@ -116,19 +114,16 @@ Keep it under 2 sentences and be encouraging.
     const assessment = await db.assessment.create({
       data: {
         userId: user.id,
-        score: score,
-        totalQuestions: questions.length,
-        correctAnswers: score,
-        results: questionResults,
+        quizScore: score,
+        questions: questionResults,
         category: "Technical",
         improvementTip,
-        type: "QUIZ",
       },
     });
 
     return assessment;
   } catch (error) {
-    console.error("❌ Error saving quiz result:", error);
+    console.error("Error saving quiz result:", error);
     throw new Error("Failed to save quiz result");
   }
 }
@@ -149,17 +144,13 @@ export async function getAssessments() {
         userId: user.id,
       },
       orderBy: {
-        createdAt: "desc",
+        createdAt: "asc",
       },
     });
 
-    return assessments.map((assessment) => ({
-      ...assessment,
-      quizScore: assessment.score ?? 0,
-      questions: assessment.results || [],
-    }));
+    return assessments;
   } catch (error) {
-    console.error("❌ Error fetching assessments:", error);
+    console.error("Error fetching assessments:", error);
     throw new Error("Failed to fetch assessments");
   }
 }

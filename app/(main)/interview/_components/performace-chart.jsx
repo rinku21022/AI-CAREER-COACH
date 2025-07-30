@@ -5,6 +5,7 @@ import {
   Line,
   XAxis,
   YAxis,
+  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
@@ -31,27 +32,6 @@ export default function PerformanceChart({ assessments }) {
     }
   }, [assessments]);
 
-  // Ensure assessments is an array
-  const safeAssessments = Array.isArray(assessments) ? assessments : [];
-
-  if (!safeAssessments.length) {
-    return (
-      <div className="border rounded-lg p-6">
-        <h3 className="text-lg font-medium mb-4">Performance Over Time</h3>
-        <div className="text-center text-muted-foreground py-8">
-          No assessment data available
-        </div>
-      </div>
-    );
-  }
-
-  // Prepare chart data with safe field access
-  const preparedChartData = safeAssessments.map((assessment, index) => ({
-    assessment: `Quiz ${index + 1}`,
-    score: assessment.score || assessment.quizScore || 0,
-    date: new Date(assessment.createdAt).toLocaleDateString(),
-  }));
-
   return (
     <Card>
       <CardHeader>
@@ -63,24 +43,32 @@ export default function PerformanceChart({ assessments }) {
       <CardContent>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={preparedChartData}>
-              <XAxis dataKey="assessment" />
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
               <YAxis domain={[0, 100]} />
               <Tooltip
-                labelFormatter={(label, payload) => {
-                  if (payload && payload.length > 0) {
-                    return `${label} - ${payload[0].payload.date}`;
+                content={({ active, payload }) => {
+                  if (active && payload?.length) {
+                    return (
+                      <div className="bg-background border rounded-lg p-2 shadow-md">
+                        <p className="text-sm font-medium">
+                          Score: {payload[0].value}%
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {payload[0].payload.date}
+                        </p>
+                      </div>
+                    );
                   }
-                  return label;
+                  return null;
                 }}
-                formatter={(value) => [`${value}%`, "Score"]}
               />
               <Line
                 type="monotone"
                 dataKey="score"
                 stroke="hsl(var(--primary))"
                 strokeWidth={2}
-                dot={{ fill: "hsl(var(--primary))", strokeWidth: 2, r: 4 }}
               />
             </LineChart>
           </ResponsiveContainer>

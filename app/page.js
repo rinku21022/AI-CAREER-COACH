@@ -1,9 +1,14 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import React from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  ArrowRight,
+  Trophy,
+  Target,
+  Sparkles,
+  CheckCircle2,
+} from "lucide-react";
 import HeroSection from "@/components/hero";
 import {
   Accordion,
@@ -16,43 +21,13 @@ import { features } from "@/data/features";
 import { testimonial } from "@/data/testimonial";
 import { faqs } from "@/data/faqs";
 import { howItWorks } from "@/data/howItWorks";
-import { Loader2 } from "lucide-react";
-import { generateQuiz } from "@/actions/interview";
-import Link from "next/link";
 
 export default function LandingPage() {
-  const [questions, setQuestions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [answers, setAnswers] = useState([]);
-
-  useEffect(() => {
-    const loadQuiz = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const quizData = await generateQuiz();
-        
-        if (!quizData || !Array.isArray(quizData)) {
-          throw new Error("Invalid quiz data received");
-        }
-        
-        setQuestions(quizData);
-        setAnswers(new Array(quizData.length).fill(null));
-      } catch (err) {
-        console.error("Quiz loading error:", err);
-        setError(err.message || "Failed to load quiz");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadQuiz();
-  }, []);
-
   return (
     <>
       <div className="grid-background"></div>
+
+      {/* Hero Section */}
       <HeroSection />
 
       {/* Features Section */}
@@ -63,12 +38,17 @@ export default function LandingPage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
             {features.map((feature, index) => (
-              <Card key={index} className="border-2 hover:border-primary transition-colors duration-300">
+              <Card
+                key={index}
+                className="border-2 hover:border-primary transition-colors duration-300"
+              >
                 <CardContent className="pt-6 text-center flex flex-col items-center">
                   <div className="flex flex-col items-center justify-center">
                     {feature.icon}
                     <h3 className="text-xl font-bold mb-2">{feature.title}</h3>
-                    <p className="text-muted-foreground">{feature.description}</p>
+                    <p className="text-muted-foreground">
+                      {feature.description}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -128,7 +108,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Testimonials Section */}
       <section className="w-full py-12 md:py-24 bg-muted/50">
         <div className="container mx-auto px-4 md:px-6">
           <h2 className="text-3xl font-bold text-center mb-12">
@@ -222,89 +201,10 @@ export default function LandingPage() {
                 variant="secondary"
                 className="h-11 mt-5 animate-bounce"
               >
-                Start Your Journey Today{" "}
-                <ArrowRight className="ml-2 h-4 w-4" />
+                Start Your Journey Today <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
           </div>
-        </div>
-      </section>
-
-      {/* Quiz Component Section */}
-      <section className="w-full py-12 md:py-24 bg-background">
-        <div className="container mx-auto px-4 md:px-6">
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="text-3xl font-bold mb-4">Your Personalized Quiz</h2>
-            <p className="text-muted-foreground">
-              Test your knowledge and prepare for interviews
-            </p>
-          </div>
-
-          {loading && (
-            <div className="flex justify-center items-center min-h-[400px]">
-              <div className="text-center">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-                <p>Generating your personalized quiz...</p>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <Card className="max-w-md mx-auto">
-              <CardContent className="p-6 text-center">
-                <h3 className="text-lg font-semibold mb-2">Unable to Load Quiz</h3>
-                <p className="text-muted-foreground mb-4">{error}</p>
-                <Button onClick={() => window.location.reload()}>
-                  Try Again
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {!loading && !error && (!questions || questions.length === 0) && (
-            <Card className="max-w-md mx-auto">
-              <CardContent className="p-6 text-center">
-                <h3 className="text-lg font-semibold mb-2">No Questions Available</h3>
-                <p className="text-muted-foreground mb-4">
-                  We couldn't generate quiz questions at this time.
-                </p>
-                <Button onClick={() => window.location.reload()}>
-                  Refresh
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {!loading && !error && questions && questions.length > 0 && (
-            <div className="max-w-2xl mx-auto">
-              {questions.map((question, index) => (
-                <Card key={index} className="mb-4">
-                  <CardHeader>
-                    <CardTitle>Question {index + 1}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="mb-4">{question.question}</p>
-                    <div className="space-y-2">
-                      {question.options?.map((option, optionIndex) => (
-                        <Button
-                          key={optionIndex}
-                          variant="outline"
-                          className="w-full text-left justify-start"
-                          onClick={() => {
-                            const newAnswers = [...answers];
-                            newAnswers[index] = option;
-                            setAnswers(newAnswers);
-                          }}
-                        >
-                          {option}
-                        </Button>
-                      )) || <p className="text-muted-foreground">No options available</p>}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
         </div>
       </section>
     </>

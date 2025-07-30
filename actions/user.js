@@ -4,7 +4,6 @@ import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { generateAIInsights } from "./dashboard";
-import { inngest } from "@/lib/inngest/client";
 
 export async function updateUser(data) {
   const { userId } = await auth();
@@ -17,33 +16,54 @@ export async function updateUser(data) {
   if (!user) throw new Error("User not found");
 
   try {
-    // Update the user directly without the industryInsight relation
-    const updatedUser = await db.user.update({
-      where: {
-        id: user.id,
-      },
-      data: {
-        industry: data.industry,
-        experience: data.experience,
-        bio: data.bio,
-        skillsString: Array.isArray(data.skills) ? data.skills.join(',') : data.skills,
-      },
-    });
+    // Start a transaction to handle both operations
+    const result = await db.$transaction(
+      async (tx) => {
+        // First check if industry exists
+        let industryInsight = await tx.industryInsight.findUnique({
+          where: {
+            industry: data.industry,
+          },
+        });
 
-    // Trigger Inngest event for user onboarding
-    await inngest.send({
-      name: "user/onboarded",
-      data: {
-        userId: user.id,
-        industry: data.industry
+        // If industry doesn't exist, create it with default values
+        if (!industryInsight) {
+          const insights = await generateAIInsights(data.industry);
+
+          industryInsight = await db.industryInsight.create({
+            data: {
+              industry: data.industry,
+              ...insights,
+              nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            },
+          });
+        }
+
+        // Now update the user
+        const updatedUser = await tx.user.update({
+          where: {
+            id: user.id,
+          },
+          data: {
+            industry: data.industry,
+            experience: data.experience,
+            bio: data.bio,
+            skills: data.skills,
+          },
+        });
+
+        return { updatedUser, industryInsight };
+      },
+      {
+        timeout: 10000, // default: 5000
       }
-    });
+    );
 
     revalidatePath("/");
-    return updatedUser;
+    return result.user;
   } catch (error) {
-    console.error("Error updating user:", error);
-    throw new Error(`Failed to update profile: ${error.message}`);
+    console.error("Error updating user and industry:", error.message);
+    throw new Error("Failed to update profile");
   }
 }
 

@@ -1,11 +1,6 @@
 {
-  "extends": ["next/core-web-vitals", "eslint:recommended"],
-  "env": {
-    "browser": true,
-    "es2021": true
-  },
+  "extends": "next/core-web-vitals",
   "rules": {
-    "no-unused-vars": ["warn"],
-    "react/react-in-jsx-scope": "off"
+    "no-unused-vars": ["warn"]
   }
 }
